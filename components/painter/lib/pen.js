@@ -34,7 +34,7 @@ export default class Painter {
       // 如果未设置背景，则默认使用白色
       this.ctx.setFillStyle('#fff');
       this.ctx.fillRect(-(width / 2), -(height / 2), width, height);
-    } else if (bg.startsWith('#') || bg.startsWith('rgba')) {
+    } else if (bg.startsWith('#') || bg.startsWith('rgba') || bg.toLowerCase() === 'transparent') {
       // 背景填充颜色
       this.ctx.setFillStyle(bg);
       this.ctx.fillRect(-(width / 2), -(height / 2), width, height);
@@ -47,7 +47,7 @@ export default class Painter {
 
   _drawAbsolute(view) {
     // 证明 css 为数组形式，需要合并
-    if (view.css.length) {
+    if (view.css && view.css.length) {
       /* eslint-disable no-param-reassign */
       view.css = Object.assign(...view.css);
     }
@@ -103,6 +103,9 @@ export default class Painter {
    * 画边框
    */
   _doBorder(view, width, height) {
+    if (!view.css) {
+      return;
+    }
     const {
       borderRadius,
       borderWidth,
@@ -138,38 +141,45 @@ export default class Painter {
   _preProcess(view, notClip) {
     let width;
     let height;
-    let x;
-    let y;
     let extra;
-    if (view.type === 'text') {
-      const fontWeight = view.css.fontWeight === 'bold' ? 'bold' : 'normal';
-      view.css.fontSize = view.css.fontSize ? view.css.fontSize : '20rpx';
-      this.ctx.font = `normal ${fontWeight} ${view.css.fontSize.toPx()}px sans-serif`;
-      // this.ctx.setFontSize(view.css.fontSize.toPx());
-      const textLength = this.ctx.measureText(view.text).width;
-      width = view.css.width ? view.css.width.toPx() : textLength;
-      // 计算行数
-      const calLines = Math.ceil(textLength / width);
-      const lines = view.css.maxLines < calLines ? view.css.maxLines : calLines;
-      const lineHeight = view.css.lineHeight ? view.css.lineHeight.toPx() : view.css.fontSize.toPx();
-      height = lineHeight * lines;
-
-      x = view.css.right ? this.style.width - view.css.right.toPx(true) : (view.css.left ? view.css.left.toPx(true) : 0);
-      y = view.css.bottom ? this.style.height - height - view.css.bottom.toPx(true) : (view.css.top ? view.css.top.toPx(true) : 0);
-      extra = { lines: lines, lineHeight: lineHeight };
-    } else {
-      if (!(view.css.width && view.css.height)) {
-        console.error('You should set width and height');
-        return;
+    switch (view.type) {
+      case 'text': {
+        const fontWeight = view.css.fontWeight === 'bold' ? 'bold' : 'normal';
+        view.css.fontSize = view.css.fontSize ? view.css.fontSize : '20rpx';
+        this.ctx.font = `normal ${fontWeight} ${view.css.fontSize.toPx()}px ${view.css.fontFamily ? view.css.fontFamily : 'sans-serif'}`;
+        // this.ctx.setFontSize(view.css.fontSize.toPx());
+        const textLength = this.ctx.measureText(view.text).width;
+        width = view.css.width ? view.css.width.toPx() : textLength;
+        // 计算行数
+        const calLines = Math.ceil(textLength / width);
+        const lines = view.css.maxLines < calLines ? view.css.maxLines : calLines;
+        const lineHeight = view.css.lineHeight ? view.css.lineHeight.toPx() : view.css.fontSize.toPx();
+        height = lineHeight * lines;
+        extra = { lines: lines, lineHeight: lineHeight };
+        break;
       }
-      width = view.css.width.toPx();
-      height = view.css.height.toPx();
-      x = view.css.right ? this.style.width - view.css.right.toPx(true) : (view.css.left ? view.css.left.toPx(true) : 0);
-      y = view.css.bottom ? this.style.height - height - view.css.bottom.toPx(true) : (view.css.top ? view.css.top.toPx(true) : 0);
+      case 'image': {
+        // image 如果未设置长宽，则使用图片本身的长宽
+        const ratio = getApp().systemInfo.pixelRatio ? getApp().systemInfo.pixelRatio : 2;
+        width = view.css && view.css.width ? view.css.width.toPx() : Math.round(view.sWidth / ratio);
+        height = view.css && view.css.height ? view.css.height.toPx() : Math.round(view.sHeight / ratio);
+        break;
+      }
+      default: {
+        if (!(view.css.width && view.css.height)) {
+          console.error('You should set width and height');
+          return;
+        }
+        width = view.css.width.toPx();
+        height = view.css.height.toPx();
+      }
     }
-    const angle = view.css.rotate ? this._getAngle(view.css.rotate) : 0;
+    const x = view.css && view.css.right ? this.style.width - view.css.right.toPx(true) : (view.css && view.css.left ? view.css.left.toPx(true) : 0);
+    const y = view.css && view.css.bottom ? this.style.height - height - view.css.bottom.toPx(true) : (view.css && view.css.top ? view.css.top.toPx(true) : 0);
+
+    const angle = view.css && view.css.rotate ? this._getAngle(view.css.rotate) : 0;
     // 当设置了 right 时，默认 align 用 right，反之用 left
-    const align = view.css.align ? view.css.align : (view.css.right ? 'right' : 'left');
+    const align = view.css && view.css.align ? view.css.align : (view.css && view.css.right ? 'right' : 'left');
     switch (align) {
       case 'center':
         this.ctx.translate(x, y + height / 2);
@@ -182,7 +192,7 @@ export default class Painter {
         break;
     }
     this.ctx.rotate(angle);
-    if (!notClip) {
+    if (!notClip && view.css && view.css.borderRadius) {
       this._doClip(view.css.borderRadius, width, height);
     }
 
@@ -216,24 +226,22 @@ export default class Painter {
       height,
     } = this._preProcess(view);
     // 获得缩放到图片大小级别的裁减框
-    let rWidth;
-    let rHeight;
+    let rWidth = view.sWidth;
+    let rHeight = view.sHeight;
     let startX = 0;
     let startY = 0;
-    if (width > height) {
-      rHeight = Math.round((view.sWidth / width) * height);
-      rWidth = view.sWidth;
+    // 绘画区域比例
+    const cp = width / height;
+    // 原图比例
+    const op = view.sWidth / view.sHeight;
+    if (cp >= op) {
+      rHeight = rWidth / cp;
+      startY = Math.round((view.sHeight - rHeight) / 2);
     } else {
-      rWidth = Math.round((view.sHeight / height) * width);
-      rHeight = view.sHeight;
-    }
-    if (view.sWidth > rWidth) {
+      rWidth = rHeight * cp;
       startX = Math.round((view.sWidth - rWidth) / 2);
     }
-    if (view.sHeight > rHeight) {
-      startY = Math.round((view.sHeight - rHeight) / 2);
-    }
-    if (view.css.mode === 'aspectFit') {
+    if (view.css && view.css.mode === 'scaleToFill') {
       this.ctx.drawImage(view.url, -(width / 2), -(height / 2), width, height);
     } else {
       this.ctx.drawImage(view.url, startX, startY, rWidth, rHeight, -(width / 2), -(height / 2), width, height);

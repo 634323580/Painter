@@ -27,6 +27,11 @@ Component({
         }
       },
     },
+    // 启用脏检查，默认 false
+    dirty: {
+      type: Boolean,
+      value: false,
+    },
   },
 
   data: {
@@ -52,7 +57,7 @@ Component({
     },
 
     isNeedRefresh(newVal, oldVal) {
-      if (!newVal || this.isEmpty(newVal)) {
+      if (!newVal || this.isEmpty(newVal) || (this.data.dirty && util.equal(newVal, oldVal))) {
         return false;
       }
       return true;
@@ -129,7 +134,7 @@ Component({
                     view.sHeight = res.height;
                   },
                   fail: (error) => {
-                    console.error(`getImageInfo failed, ${Json.stringify(error)}`);
+                    console.error(`getImageInfo failed, ${JSON.stringify(error)}`);
                   },
                   complete: () => {
                     completeCount++;
